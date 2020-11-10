@@ -1,0 +1,151 @@
+DB2 required packages for RHEL 7.6:
+**********************************
+$yum install -y adwaita-gtk2-theme.i686 binutils.x86_64 compat-libcap1-1.10-x86_64 compat-libstdc++-33.i686 compat-libstdc++-33.x86_64 cpp.x86_64 elfutils-libelf.x86_64 elfutils-libelf-devel.x86_64 gcc.x86_64 gcc-c++.x86_64 glibc.i686 glibc.x86_64 glibc-common.x86_64 glibc-devel.i686 glibc-devel.x86_64 glibc-headers.x86_64 kernel.x86_64 kernel-devel.x86_64 kernel-headers.x86_64 ksh.x86_64 libaio.i686 libaio.x86_64 libaio-devel-0.3.107-i686 libaio-devel-0.3.107-x86_64 libcanberra.i686 libcanberra-devel.* libgcc.i686 libgcc.x86_64 libgomp.x86_64 libstdc++.i686 libstdc++-devel.x86_64 libstdc++-devel-4.4.4-i686 libXp.i686 libXp.x86_64 libXpm.x86_64 make.x86_64 motif.i686 motif.x86_64 nfs-utils.x86_64 ntp.x86_64 openssh.x86_64 openssl.x86_64 openssl098e.i686 PackageKit-gtk3-module.i686 pam.x86_64 patch.x86_64 sg3_utils.x86_64 sg3_utils-libs.i686 sg3_utils-libs.x86_64 tcsh-6.17-25.el6_6.x86_64 vsftpd.x86_64 unixODBC-2.2.11-i686 unixODBC-2.2.11-x86_64 unixODBC-devel-2.2.11-i686 unixODBC-devel-2.2.11-x86_64 perl-Sys-Syslog
+
+Pre Installation Steps:
+**********************
+
+1. Disable SELinux --> $vim /etc/selinux/config
+
+2. Set Display variable --> $ set DISPLAY=10.1.0.4:0.0 --> $export DISPLAY --> check --> $echo $DISPLAY
+			    $ set DISPLAY=10.1.0.5:0.0 --> $export DISPLAY --> check --> $echo $DISPLAY
+
+3. Enable FTP --> $systemctl start vsftpd.service
+
+4. $ systemctl stop firewalld
+   $ systemctl disable firewalld
+
+Note: lib dir --> /usr/lib/
+
+$sudo vim /etc/hosts --> 10.1.0.4 primary
+			 10.1.0.5 standby
+
+
+Download DB2:
+************
+$wget https://ak-delivery04-mul.dhe.ibm.com/sdfdl/v2/sar/CM/IM/08n7s/1/Xa.2/Xb.jusyLTSp44S03W54ki40LJCw8DXO_zOB1_HcM9EJeo6gvhb9-P3kKxUbrCg/Xc.CM/IM/08n7s/1/v11.1.4fp5_linuxx64_server_t.tar.gz/Xd./Xf.LPR.D1vk/Xg.10874557/Xi.habanero/XY.habanero/XZ.fNfaeFCqebD3kj80yTPawtgQmqU/v11.1.4fp5_linuxx64_server_t.tar.gz
+
+$ tar -xvf v11.1.4fp5_linuxx64_server_t.tar.gz
+
+$ cd server_t/
+
+$ ./db2prereqcheck -l
+
+$ ./db2_install
+
+Install DB2:
+***********
+
+Installation path --> $ cd /opt/ibm/db2/V11.1/
+
+1. groupadd db2iadm1
+2. groupadd db2fadm1
+3. useradd -g db2iadm1 -d /home/db2inst1 db2inst1 , useradd -g db2fadm1 -d /home/db2fenc1 db2fenc1
+4. useradd -g db2iadm1 -d /home/db2inst1 db2inst1 , useradd -g db2fadm1 -d /home/db2fenc1 db2fenc1
+5. ./db2icrt -u db2fenc1 db2inst1  & ./db2icrt -u db2fenc1 db2inst2
+6. $ passwd db2inst1
+
+$sudo vim /etc/services --> primarysvc	60008/tcp
+			    standbysvc	60009/tcp
+
+Db2 instance variable registry settings:
+***************************************
+/* Login to db2inst1 --> 1. $db2 update dbm cfg using svcename 60000 
+		      	 2. $db2set db2comm=TCPIP
+
+Db2 configuration settings:
+**************************
+$ db2 update cli cfg for section db2ci using StrWorkaround 1  --> $cat /home/db2inst1/sqllib/cfg/db2cli.ini  & $cat /home/db2inst2/sqllib/cfg/db2cli.ini */
+
+Starting the Db2 instance:
+*************************
+
+$ db2start
+$ db2level
+
+On Primary:
+**********
+
+$ db2 "create db HADB"
+
+$ db2 create db hadb
+$ db2 update db cfg for hadb using LOGARCHMETH1 LOGRETAIN 
+$ db2 backup db HADB
+
+$ db2 connect to hadb
+
+$ db2 "create table db1(id int, name varchar(50))"
+$ db2 "insert into db1 values(100, 'chandra')"
+
+$ db2 backup db HADB to /home/db2inst1/backups/
+
+$ scp  db2inst2@10.1.0.5:/home/db2inst1/
+
+db2 update db cfg for hadb using HADR_LOCAL_HOST primary
+db2 update db cfg for hadb using HADR_LOCAL_SVC 55555
+db2 update db cfg for hadb using HADR_REMOTE_HOST standby
+db2 update db cfg for hadb using HADR_REMOTE_SVC 55555
+db2 update db cfg for hadb using HADR_REMOTE_INST db2inst1
+db2 update db cfg for hadb using LOGINDEXBUILD ON
+db2 update db cfg for hadb using HADR_PEER_WINDOW 300
+db2 update db cfg for hadb using HADR_TARGET_LIST standby:55555
+db2 update db cfg for hadb using HADR_REPLAY_DELAY 0
+db2 update db cfg for hadb using HADR_SPOOL_LIMIT 0
+db2 update db cfg for hadb using HADR_SYNCMODE SYNC
+db2 update alternate server for database hadb using hostname 10.1.0.5 port 55555
+
+
+db2stop; db2start
+
+On Standby:
+**********
+
+$ db2 restore db hadb
+
+db2 update db cfg for hadb using HADR_LOCAL_HOST standby
+db2 update db cfg for hadb using HADR_LOCAL_SVC 55555
+db2 update db cfg for hadb using HADR_REMOTE_HOST primary
+db2 update db cfg for hadb using HADR_REMOTE_SVC 55555
+db2 update db cfg for hadb using HADR_REMOTE_INST db2inst1
+db2 update db cfg for hadb using LOGINDEXBUILD ON
+db2 update db cfg for hadb using HADR_PEER_WINDOW 300
+db2 update db cfg for hadb using HADR_TARGET_LIST primary:55555
+db2 update db cfg for hadb using HADR_REPLAY_DELAY 0
+db2 update db cfg for hadb using HADR_SPOOL_LIMIT 0
+db2 update db cfg for hadb using HADR_SYNCMODE SYNC
+db2 update alternate server for database hadb using hostname 10.1.0.4 port 55555
+
+
+$db2stop; db2start
+
+
+-> db2 start hadr on db hadb as standby
+-> db2 start hadr on db hadb as primary
+
+
+TSA Configuration:
+*****************
+loginto standby --> $ db2haicu 
+
+loginto primary --> $ db2haicu
+
+$ lssam
+
+virtual ip --> 10.1.0.23
+private network --> db2_private_network_0
+
+
+db2pd -db hadb -hadr | grep -i -e state -e role
+
+lssam -top
+
+rgreq -O move -n standby db2_db2inst1_db2inst1_HADB-rg
+
+
+
+
+
+
+
+
+
